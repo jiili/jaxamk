@@ -328,5 +328,6 @@ if data is not None:
 else:
     st.error("Failed to load data. Cannot display the application.")
 
-st.sidebar.markdown("---")
-st.sidebar.info("Aja komennolla: `streamlit run streamlit_app.py`") 
+# --- Optional: Add instructions on how to run ---
+# st.sidebar.markdown("---")
+# st.sidebar.info("Aja komennolla: `streamlit run streamlit_app.py`") 
