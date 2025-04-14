@@ -235,36 +235,67 @@ if data is not None:
 
     if selected_metric_key == 'mediaanihinta_eur':
         st.info("Mediaanihintaa ei voida mielekkäästi verrata tässä kuvaajassa keskiarvoistamalla.")
+        bar_chart_data = pd.DataFrame() # Ensure it's empty
     elif not filtered_data.empty:
-        # Prepare data for bar chart: Average metric over the period, grouped by area and shoreline type
         group_cols_bar = [filter_col, SHORELINE_COL]
-
-        # Use weighted averages if Maakunta level for area/price, simple average for count
         agg_funcs_bar = {}
-        if selected_metric_key == 'lukumäärä':
-             # Average the yearly count over the period
-             agg_funcs_bar[selected_metric_key] = 'mean'
-        elif selected_metric_key == 'ka_pinta_ala_m2' and 'lukumäärä' in filtered_data.columns:
-             # Overall weighted average for the period
-             temp_df_bar = filtered_data.copy()
-             temp_df_bar['total_area'] = temp_df_bar['ka_pinta_ala_m2'] * temp_df_bar['lukumäärä']
-             summary_bar = temp_df_bar.groupby(group_cols_bar).agg(total_area=('total_area', 'sum'), total_count=('lukumäärä', 'sum')).reset_index()
-             summary_bar[selected_metric_key] = summary_bar['total_area'] / summary_bar['total_count']
-             bar_chart_data = summary_bar
-        elif selected_metric_key == 'keskihinta_eur' and 'lukumäärä' in filtered_data.columns:
-             # Overall weighted average for the period
-             temp_df_bar = filtered_data.copy()
-             temp_df_bar['total_price'] = temp_df_bar['keskihinta_eur'] * temp_df_bar['lukumäärä']
-             summary_bar = temp_df_bar.groupby(group_cols_bar).agg(total_price=('total_price', 'sum'), total_count=('lukumäärä', 'sum')).reset_index()
-             summary_bar[selected_metric_key] = summary_bar['total_price'] / summary_bar['total_count']
-             bar_chart_data = summary_bar
-        else:
-             # Fallback for other metrics or if count isn't available - simple average
-             try:
-                bar_chart_data = filtered_data.groupby(group_cols_bar, as_index=False)[selected_metric_key].mean()
-             except Exception:
-                 bar_chart_data = pd.DataFrame() # Handle potential errors during mean calculation
+        temp_df_bar = filtered_data.copy()
 
+        # Prepare temporary columns for weighted calculations if needed
+        if 'lukumäärä' in temp_df_bar.columns:
+            agg_funcs_bar['total_count'] = ('lukumäärä', 'sum')
+            if 'ka_pinta_ala_m2' in temp_df_bar.columns:
+                temp_df_bar['total_area'] = temp_df_bar['ka_pinta_ala_m2'] * temp_df_bar['lukumäärä']
+                agg_funcs_bar['total_area'] = ('total_area', 'sum')
+            if 'keskihinta_eur' in temp_df_bar.columns:
+                temp_df_bar['total_price'] = temp_df_bar['keskihinta_eur'] * temp_df_bar['lukumäärä']
+                agg_funcs_bar['total_price'] = ('total_price', 'sum')
+        # Add mean aggregation for the metric itself as a potential fallback
+        if selected_metric_key in temp_df_bar.columns:
+             # Use try-except as mean might fail for non-numeric types unexpectedly
+            try:
+                 pd.to_numeric(temp_df_bar[selected_metric_key], errors='raise')
+                 agg_funcs_bar[f'{selected_metric_key}_mean'] = (selected_metric_key, 'mean')
+            except (ValueError, TypeError):
+                 st.warning(f"Could not calculate mean for metric '{selected_metric_label}' in bar chart.", icon="⚠️")
+
+        # Perform the aggregation
+        if agg_funcs_bar:
+            summary_bar = temp_df_bar.groupby(group_cols_bar, as_index=False).agg(**agg_funcs_bar)
+            bar_chart_data = summary_bar # Start with aggregated base data
+
+            # Calculate the final metric column if possible
+            try:
+                if selected_metric_key == 'lukumäärä' and 'total_count' in summary_bar.columns:
+                     # Average the yearly count over the period - use the summed count
+                     # Need count of years per group
+                     years_per_group = temp_df_bar.groupby(group_cols_bar)[YEAR_COL].nunique().reset_index(name='year_count')
+                     summary_bar = pd.merge(summary_bar, years_per_group, on=group_cols_bar, how='left')
+                     summary_bar[selected_metric_key] = summary_bar['total_count'] / summary_bar['year_count']
+                elif selected_metric_key == 'ka_pinta_ala_m2' and 'total_area' in summary_bar.columns and 'total_count' in summary_bar.columns:
+                    summary_bar[selected_metric_key] = summary_bar['total_area'] / summary_bar['total_count']
+                elif selected_metric_key == 'keskihinta_eur' and 'total_price' in summary_bar.columns and 'total_count' in summary_bar.columns:
+                    summary_bar[selected_metric_key] = summary_bar['total_price'] / summary_bar['total_count']
+                elif f'{selected_metric_key}_mean' in summary_bar.columns:
+                    # Use pre-calculated mean as fallback if specific logic not met
+                    summary_bar[selected_metric_key] = summary_bar[f'{selected_metric_key}_mean']
+                # else: the selected_metric_key column might not be created
+
+                bar_chart_data = summary_bar # Update with the calculated metric
+
+            except ZeroDivisionError:
+                st.warning(f"Cannot calculate weighted average for '{selected_metric_label}' due to zero counts in some groups.", icon="⚠️")
+                # Remove the metric column if calculation failed
+                if selected_metric_key in bar_chart_data.columns:
+                    bar_chart_data = bar_chart_data.drop(columns=[selected_metric_key])
+            except Exception as e:
+                st.warning(f"Error calculating final metric for bar chart: {e}", icon="⚠️")
+                if selected_metric_key in bar_chart_data.columns:
+                    bar_chart_data = bar_chart_data.drop(columns=[selected_metric_key])
+        else:
+            bar_chart_data = pd.DataFrame() # No aggregation possible
+
+        # Check and plot ONLY if the final metric column exists
         if not bar_chart_data.empty and selected_metric_key in bar_chart_data.columns:
             fig_bar = px.bar(
                 bar_chart_data.sort_values(by=[filter_col, SHORELINE_COL]),
