@@ -1,0 +1,47 @@
+.devcontainer/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+*.venv
+venv/
+.env
+.venv
+env/
+ENV/
+*.log
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+htmlcov/
+.coverage
+.python-version
+
+# macOS
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
+Thumbs.db
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# Streamlit
+.streamlit/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+
